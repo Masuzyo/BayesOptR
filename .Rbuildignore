@@ -1,0 +1,17 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.git$
+^\.gitignore$
+^README\.Rmd$
+^LICENSE\.md$
+^\.github$
+^_pkgdown\.yml$
+^docs$
+^pkgdown$
+^\.travis\.yml$
+^appveyor\.yml$
+^codecov\.yml$
+^test_package\.R$
+^test_package_comprehensive\.Rmd$
+^test_package_comprehensive\.html$
+^data-raw$

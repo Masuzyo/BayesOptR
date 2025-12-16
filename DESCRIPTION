@@ -1,0 +1,45 @@
+Package: BayesOptR
+Type: Package
+Title: Bayesian Optimization with Targeted Blocking and Parallel Batch Acquisition
+Version: 0.1.0
+Authors@R: c(
+    person("Masuzyo", role = c("aut", "cre"), email = "masuzyo@example.com")
+    )
+Description: Advanced Bayesian Optimization framework implementing Gaussian Process, 
+    Student-t Process, and Adaptive Hybrid Bayesian Optimization with Student-t 
+    Expected Improvement. Features include targeted blocking strategies (dimension-wise 
+    and distance-based, both hard/soft variants), local penalization, constant liar 
+    heuristics, and comprehensive parallelization support for batch acquisition in 
+    high-dimensional optimization problems.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Depends:
+    R (>= 4.0.0)
+Imports:
+    DiceKriging (>= 1.6.0),
+    lhs (>= 1.1.0),
+    parallel,
+    future,
+    future.apply,
+    foreach,
+    doParallel,
+    MASS,
+    mvtnorm,
+    Matrix,
+    matrixStats,
+    Rcpp (>= 1.0.0),
+    R6
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown,
+    ggplot2,
+    plotly,
+    reshape2,
+    microbenchmark
+LinkingTo: Rcpp, RcppArmadillo
+RoxygenNote: 7.2.3
+VignetteBuilder: knitr
+URL: https://github.com/yourusername/BayesOptR
+BugReports: https://github.com/yourusername/BayesOptR/issues

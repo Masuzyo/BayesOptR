@@ -1,0 +1,68 @@
+# History files
+.Rhistory
+.Rapp.history
+
+# Session Data files
+.RData
+.RDataTmp
+
+# User-specific files
+.Ruserdata
+
+# RStudio files
+.Rproj.user/
+*.Rproj
+
+# OAuth2 token
+.httr-oauth
+
+# knitr and R markdown default cache directories
+*_cache/
+/cache/
+
+# Temporary files created by R markdown
+*.utf8.md
+*.knit.md
+
+# R Environment Variables
+.Renviron
+
+# pkgdown site
+docs/
+
+# translation temp files
+po/*~
+
+# Built files
+*.o
+*.so
+*.dll
+src/*.o
+src/*.so
+src/*.dll
+
+# Mac specific
+.DS_Store
+
+# Package build artifacts
+*.tar.gz
+*.zip
+
+# Test outputs
+test_output/
+*.log
+
+# Compiled documentation
+man/*.Rd~
+
+# Build artifacts
+inst/doc
+vignettes/*.html
+vignettes/*.pdf
+vignettes/*.R
+
+# Local test files (keep in repo for reference)
+# Uncomment if you want to exclude test files:
+# test_package.R
+# test_package_comprehensive.Rmd
+# test_package_comprehensive.html
