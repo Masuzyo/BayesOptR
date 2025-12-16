@@ -18,7 +18,7 @@
 #' @param minimize Minimize instead of maximize (default: FALSE)
 #' @param verbose Print progress (default: TRUE)
 #' @param nu Degrees of freedom for Student-t (default: 3)
-#' @param nu_schedule Schedule for adaptive hybrid: "linear", "exponential", "sigmoid" (default: "linear")
+#' @param nu_schedule Schedule for adaptive hybrid: "data_driven", "linear", "exponential", "sigmoid", "performance" (default: "data_driven")
 #' @param ... Additional arguments passed to blocking strategies
 #'
 #' @return List with optimization results including:
@@ -69,7 +69,7 @@ bayes_optimize <- function(fn, bounds,
                           minimize = FALSE,
                           verbose = TRUE,
                           nu = 3,
-                          nu_schedule = "linear",
+                          nu_schedule = "data_driven",
                           ...) {
   
   # Validate inputs

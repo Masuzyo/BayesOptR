@@ -11,6 +11,7 @@
 #' - Late iterations: High nu → Converges to Gaussian behavior
 #' 
 #' Adaptation strategies:
+#' - "data_driven" (default): nu = max(3, n - d - 1) where n = observations, d = dimensions
 #' - "linear": Linear increase from nu_min to nu_max
 #' - "exponential": Exponential growth
 #' - "sigmoid": Smooth sigmoid transition
@@ -39,11 +40,11 @@ AdaptiveHybridBO <- R6::R6Class(
     #' Initialize Adaptive Hybrid BO
     #' @param nu_min Minimum nu (default: 3, heavy tails)
     #' @param nu_max Maximum nu (default: 50, near-Gaussian)
-    #' @param nu_schedule Schedule type: "linear", "exponential", "sigmoid", "performance"
+    #' @param nu_schedule Schedule type: "data_driven" (default), "linear", "exponential", "sigmoid", "performance"
     #' @param max_iterations Total iterations for adaptation (required for non-performance schedules)
     #' @inheritParams GaussianBO
     initialize = function(bounds, nu_min = 3, nu_max = 50, 
-                         nu_schedule = "linear", max_iterations = 100,
+                         nu_schedule = "data_driven", max_iterations = 100,
                          kernel = "matern52", nugget = 1e-8, n_init = NULL) {
       super$initialize(bounds, nu_min, kernel, nugget, n_init)
       
@@ -65,10 +66,22 @@ AdaptiveHybridBO <- R6::R6Class(
         self$iteration <- self$iteration + 1
       }
       
+      # Get number of observations and dimensions
+      n <- nrow(self$X)
+      d <- ncol(self$X)
+      
+      # Calculate nu based on data: max(3, n - d - 1)
+      nu_from_data <- max(3, n - d - 1)
+      
       progress <- min(self$iteration / self$max_iterations, 1.0)
       
       self$current_nu <- switch(
         self$nu_schedule,
+        
+        "data_driven" = {
+          # Use data-driven formula: max(3, n - d - 1)
+          nu_from_data
+        },
         
         "linear" = {
           self$nu_min + progress * (self$nu_max - self$nu_min)
@@ -102,8 +115,8 @@ AdaptiveHybridBO <- R6::R6Class(
           }
         },
         
-        # Default: linear
-        self$nu_min + progress * (self$nu_max - self$nu_min)
+        # Default: data-driven formula max(3, n - d - 1)
+        nu_from_data
       )
       
       # Update parent nu
