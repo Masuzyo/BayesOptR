@@ -34,6 +34,11 @@ export(plot_convergence)
 export(plot_acquisition)
 export(summary.bayesopt)
 
+# Batch selection utilities
+export(select_diverse_batch)
+export(select_max_diversity_batch)
+export(select_score_weighted_batch)
+
 # Import necessary functions
 importFrom(stats, optim, rnorm, runif, dnorm, pnorm, qnorm)
 importFrom(parallel, makeCluster, stopCluster, clusterExport, parLapply)
