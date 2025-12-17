@@ -1,0 +1,501 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tikz}
+
+\geometry{margin=1in}
+
+\title{BayesOptR: Mathematical Foundations and Algorithms}
+\author{BayesOptR Package Documentation}
+\date{December 2025}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document provides a comprehensive mathematical description of all algorithms implemented in the BayesOptR package. We detail the theoretical foundations of Gaussian Process-based Bayesian Optimization, Student-t Process extensions, Adaptive Hybrid Bayesian Optimization (AHBO), acquisition functions, and blocking strategies for batch acquisition.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+Bayesian Optimization (BO) is a sample-efficient global optimization method for expensive black-box functions. Given an objective function $f: \mathcal{X} \rightarrow \mathbb{R}$ where $\mathcal{X} \subseteq \mathbb{R}^d$, the goal is to find:
+\begin{equation}
+    \mathbf{x}^* = \arg\max_{\mathbf{x} \in \mathcal{X}} f(\mathbf{x})
+\end{equation}
+
+BayesOptR implements three Bayesian Optimization variants with multiple acquisition functions and blocking strategies for efficient batch optimization.
+
+\section{Gaussian Process Bayesian Optimization}
+
+\subsection{Gaussian Process Surrogate}
+
+A Gaussian Process (GP) defines a distribution over functions:
+\begin{equation}
+    f(\mathbf{x}) \sim \mathcal{GP}(\mu(\mathbf{x}), k(\mathbf{x}, \mathbf{x}'))
+\end{equation}
+
+where $\mu(\mathbf{x})$ is the mean function (typically set to 0) and $k(\mathbf{x}, \mathbf{x}')$ is the covariance (kernel) function.
+
+\subsubsection{Matérn 5/2 Kernel}
+
+The Matérn 5/2 kernel is used by default:
+\begin{equation}
+    k(\mathbf{x}, \mathbf{x}') = \sigma^2 \left(1 + \sqrt{5}r + \frac{5r^2}{3}\right) \exp(-\sqrt{5}r)
+\end{equation}
+where $r = \|\mathbf{x} - \mathbf{x}'\|_2 / \ell$ and $\ell$ is the length-scale parameter.
+
+\subsection{Posterior Prediction}
+
+Given observations $\mathcal{D} = \{(\mathbf{x}_i, y_i)\}_{i=1}^n$ where $y_i = f(\mathbf{x}_i) + \epsilon$ with $\epsilon \sim \mathcal{N}(0, \sigma_n^2)$, the posterior predictive distribution at a new point $\mathbf{x}^*$ is:
+\begin{align}
+    p(f(\mathbf{x}^*) | \mathcal{D}) &= \mathcal{N}(\mu(\mathbf{x}^*), \sigma^2(\mathbf{x}^*)) \\
+    \mu(\mathbf{x}^*) &= \mathbf{k}^T (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{y} \\
+    \sigma^2(\mathbf{x}^*) &= k(\mathbf{x}^*, \mathbf{x}^*) - \mathbf{k}^T (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{k}
+\end{align}
+where $\mathbf{k} = [k(\mathbf{x}^*, \mathbf{x}_1), \ldots, k(\mathbf{x}^*, \mathbf{x}_n)]^T$ and $\mathbf{K}_{ij} = k(\mathbf{x}_i, \mathbf{x}_j)$.
+
+\subsection{Algorithm}
+
+\begin{algorithm}[H]
+\caption{Gaussian Process Bayesian Optimization}
+\begin{algorithmic}[1]
+\State \textbf{Input:} Bounds $\mathcal{X}$, budget $T$, initial samples $n_0$
+\State Initialize: Sample $\mathcal{D}_0 = \{(\mathbf{x}_i, f(\mathbf{x}_i))\}_{i=1}^{n_0}$ using Latin Hypercube Sampling
+\For{$t = n_0 + 1$ to $T$}
+    \State Fit GP on $\mathcal{D}_{t-1}$ to get $\mu_{t-1}(\mathbf{x})$ and $\sigma_{t-1}(\mathbf{x})$
+    \State Select next point: $\mathbf{x}_t = \arg\max_{\mathbf{x} \in \mathcal{X}} \alpha(\mathbf{x} | \mathcal{D}_{t-1})$
+    \State Evaluate: $y_t = f(\mathbf{x}_t)$
+    \State Update: $\mathcal{D}_t = \mathcal{D}_{t-1} \cup \{(\mathbf{x}_t, y_t)\}$
+\EndFor
+\State \textbf{Return:} $\mathbf{x}^* = \arg\max_{\mathbf{x}_i \in \mathcal{D}_T} f(\mathbf{x}_i)$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Student-t Process Bayesian Optimization}
+
+\subsection{Student-t Process Surrogate}
+
+A Student-t Process (TP) is a heavy-tailed alternative to GPs, more robust to outliers:
+\begin{equation}
+    f(\mathbf{x}) \sim \mathcal{TP}_\nu(\mu(\mathbf{x}), k(\mathbf{x}, \mathbf{x}'))
+\end{equation}
+
+where $\nu$ are the degrees of freedom controlling tail heaviness.
+
+\subsection{Posterior Prediction}
+
+The posterior predictive distribution is a Student-t distribution:
+\begin{align}
+    p(f(\mathbf{x}^*) | \mathcal{D}) &= t_{\nu+n}(\mu_{TP}(\mathbf{x}^*), \sigma^2_{TP}(\mathbf{x}^*)) \\
+    \mu_{TP}(\mathbf{x}^*) &= \mathbf{k}^T (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{y} \\
+    \sigma^2_{TP}(\mathbf{x}^*) &= \frac{\nu + \beta - 2}{\nu + n - 2} \left(k(\mathbf{x}^*, \mathbf{x}^*) - \mathbf{k}^T (\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1} \mathbf{k}\right)
+\end{align}
+where $\beta = \mathbf{y}^T(\mathbf{K} + \sigma_n^2 \mathbf{I})^{-1}\mathbf{y}$.
+
+\subsection{Properties}
+
+\begin{itemize}
+    \item As $\nu \rightarrow \infty$, Student-t Process converges to Gaussian Process
+    \item Low $\nu$ (3-5): Heavy tails, robust to outliers
+    \item High $\nu$ (30-50): Near-Gaussian behavior
+\end{itemize}
+
+\section{Adaptive Hybrid Bayesian Optimization (AHBO)}
+
+\subsection{Key Innovation}
+
+AHBO combines the computational efficiency of Gaussian Process surrogate models with the exploration benefits of Student-t Expected Improvement acquisition function. The key insight is to use adaptive degrees of freedom based on available data.
+
+\subsection{Data-Driven $\nu$ Adaptation}
+
+The degrees of freedom parameter adapts based on the number of observations:
+\begin{equation}
+    \nu(n, d) = \max(3, n - d - 1)
+\end{equation}
+where:
+\begin{itemize}
+    \item $n$ = number of observations
+    \item $d$ = dimensionality of the problem
+    \item Minimum value of 3 ensures heavy tails for exploration
+\end{itemize}
+
+\subsection{Rationale}
+
+\begin{enumerate}
+    \item \textbf{Early phase} ($n$ small): $\nu \approx 3$ provides heavy tails for aggressive exploration
+    \item \textbf{Middle phase} ($n$ moderate): $\nu$ increases gradually, balancing exploration-exploitation
+    \item \textbf{Late phase} ($n$ large): $\nu$ high, approaching Gaussian-like exploitation
+    \item \textbf{Statistical motivation}: Related to degrees of freedom in estimating Student-t distribution parameters
+\end{enumerate}
+
+\subsection{Alternative Schedules}
+
+AHBO also supports fixed progression schedules:
+
+\subsubsection{Linear Schedule}
+\begin{equation}
+    \nu(t) = \nu_{\min} + \frac{t}{T}(\nu_{\max} - \nu_{\min})
+\end{equation}
+
+\subsubsection{Exponential Schedule}
+\begin{equation}
+    \nu(t) = \nu_{\min} \exp\left(\frac{t}{T} \log\left(\frac{\nu_{\max}}{\nu_{\min}}\right)\right)
+\end{equation}
+
+\subsubsection{Sigmoid Schedule}
+\begin{equation}
+    \nu(t) = \nu_{\min} + \frac{1}{1 + \exp(-10(t/T - 0.5))}(\nu_{\max} - \nu_{\min})
+\end{equation}
+
+\subsection{Algorithm}
+
+\begin{algorithm}[H]
+\caption{Adaptive Hybrid Bayesian Optimization}
+\begin{algorithmic}[1]
+\State \textbf{Input:} Bounds $\mathcal{X}$, budget $T$, initial samples $n_0$
+\State Initialize: Sample $\mathcal{D}_0 = \{(\mathbf{x}_i, f(\mathbf{x}_i))\}_{i=1}^{n_0}$ using LHS
+\For{$t = n_0 + 1$ to $T$}
+    \State Fit GP on $\mathcal{D}_{t-1}$ to get $\mu_{t-1}(\mathbf{x})$ and $\sigma_{t-1}(\mathbf{x})$
+    \State Update degrees of freedom: $\nu_t = \max(3, t - d - 1)$
+    \State Select next point: $\mathbf{x}_t = \arg\max_{\mathbf{x} \in \mathcal{X}} \text{EI}_t(\mathbf{x} | \mathcal{D}_{t-1}, \nu_t)$
+    \State Evaluate: $y_t = f(\mathbf{x}_t)$
+    \State Update: $\mathcal{D}_t = \mathcal{D}_{t-1} \cup \{(\mathbf{x}_t, y_t)\}$
+\EndFor
+\State \textbf{Return:} $\mathbf{x}^* = \arg\max_{\mathbf{x}_i \in \mathcal{D}_T} f(\mathbf{x}_i)$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Acquisition Functions}
+
+\subsection{Expected Improvement (EI)}
+
+\subsubsection{Gaussian Expected Improvement}
+
+Given the current best observation $f^+ = \max_{i=1,\ldots,n} y_i$, the Expected Improvement is:
+\begin{equation}
+    \text{EI}(\mathbf{x}) = \mathbb{E}[\max(f(\mathbf{x}) - f^+, 0)]
+\end{equation}
+
+With Gaussian posterior, this has closed form:
+\begin{equation}
+    \text{EI}(\mathbf{x}) = 
+    \begin{cases}
+        (\mu(\mathbf{x}) - f^+ - \xi) \Phi(Z) + \sigma(\mathbf{x}) \phi(Z) & \text{if } \sigma(\mathbf{x}) > 0 \\
+        0 & \text{if } \sigma(\mathbf{x}) = 0
+    \end{cases}
+\end{equation}
+where:
+\begin{align}
+    Z &= \frac{\mu(\mathbf{x}) - f^+ - \xi}{\sigma(\mathbf{x})} \\
+    \xi &\geq 0 \text{ (exploration-exploitation trade-off parameter)}
+\end{align}
+and $\Phi(\cdot)$ and $\phi(\cdot)$ are the standard normal CDF and PDF.
+
+\subsubsection{Student-t Expected Improvement}
+
+For Student-t posterior with $\nu$ degrees of freedom:
+\begin{equation}
+    \text{EI}_t(\mathbf{x}) = (\mu(\mathbf{x}) - f^+ - \xi) T_\nu(Z) + \sigma(\mathbf{x}) t_\nu(Z) \sqrt{\frac{\nu + Z^2 - 1}{\nu}}
+\end{equation}
+where:
+\begin{itemize}
+    \item $T_\nu(Z)$ is the Student-t CDF with $\nu$ degrees of freedom
+    \item $t_\nu(Z)$ is the Student-t PDF
+    \item $Z = \frac{\mu(\mathbf{x}) - f^+ - \xi}{\sigma(\mathbf{x})}$
+\end{itemize}
+
+\subsubsection{Convergence Property}
+\begin{equation}
+    \lim_{\nu \rightarrow \infty} \text{EI}_t(\mathbf{x}) = \text{EI}(\mathbf{x})
+\end{equation}
+
+\subsection{Upper Confidence Bound (UCB)}
+
+\begin{equation}
+    \text{UCB}(\mathbf{x}) = \mu(\mathbf{x}) + \kappa \sigma(\mathbf{x})
+\end{equation}
+
+Adaptive $\kappa$:
+\begin{equation}
+    \kappa_t = \sqrt{2 \log(t^2 \cdot 2\pi^2 / (3\delta))}
+\end{equation}
+where $\delta$ is the confidence parameter (default: 0.1).
+
+\subsection{Probability of Improvement (PI)}
+
+\begin{equation}
+    \text{PI}(\mathbf{x}) = \Phi\left(\frac{\mu(\mathbf{x}) - f^+ - \xi}{\sigma(\mathbf{x})}\right)
+\end{equation}
+
+\subsection{Thompson Sampling}
+
+Sample from the posterior distribution:
+\begin{equation}
+    \mathbf{x}_t = \arg\max_{\mathbf{x} \in \mathcal{X}} f_t(\mathbf{x})
+\end{equation}
+where $f_t \sim \mathcal{GP}(\mu(\mathbf{x}), \sigma^2(\mathbf{x}))$ or $f_t \sim \mathcal{TP}_\nu(\mu(\mathbf{x}), \sigma^2(\mathbf{x}))$.
+
+\section{Blocking Strategies for Batch Acquisition}
+
+\subsection{Targeted Blocking}
+
+\subsubsection{Concept}
+
+Targeted blocking focuses penalization on the region between the current best point $f^+$ (target) and the closest known evaluated point $g_{\min}$.
+
+\subsubsection{Mathematical Formulation}
+
+Let $\mathbf{x}^+ = \arg\max_{\mathbf{x}_i \in \mathcal{D}} f(\mathbf{x}_i)$ be the current best point (target).
+
+Find the closest evaluated point to $\mathbf{x}^+$:
+\begin{equation}
+    g_{\min} = \arg\min_{\mathbf{x}_i \in \mathcal{D}} \|\mathbf{x}_i - \mathbf{x}^+\|_2
+\end{equation}
+
+Define the blocking region:
+\begin{equation}
+    \mathcal{B} = \{\mathbf{x} : \|\mathbf{x}^+ - \mathbf{x}\|_2 < \|\mathbf{x}^+ - g_{\min}\|_2 \text{ and } \|\mathbf{x} - g_{\min}\|_2 < \|\mathbf{x}^+ - g_{\min}\|_2\}
+\end{equation}
+
+Apply penalty:
+\begin{equation}
+    p(\mathbf{x}) = 
+    \begin{cases}
+        \frac{\|\mathbf{x} - g_{\min}\|_2}{\|\mathbf{x}^+ - g_{\min}\|_2} & \text{if } \mathbf{x} \in \mathcal{B} \\
+        1 & \text{otherwise}
+    \end{cases}
+\end{equation}
+
+Modified acquisition:
+\begin{equation}
+    \alpha_{\text{targeted}}(\mathbf{x}) = p(\mathbf{x}) \cdot \alpha(\mathbf{x})
+\end{equation}
+
+\subsubsection{Properties}
+
+\begin{itemize}
+    \item $p(\mathbf{x}) \in [0, 1]$ for $\mathbf{x} \in \mathcal{B}$
+    \item $p(\mathbf{x}) = 1$ for $\mathbf{x} \notin \mathcal{B}$ (no penalization outside blocking region)
+    \item Prevents redundant sampling between known points
+    \item Maintains exploration elsewhere
+\end{itemize}
+
+\subsection{Distance-Based Blocking}
+
+\subsubsection{Hard Blocking}
+
+Define exclusion radius around pending/recent points $\mathcal{P}$:
+\begin{equation}
+    \mathcal{E}_r(\mathcal{P}) = \{\mathbf{x} : \min_{\mathbf{p} \in \mathcal{P}} \|\mathbf{x} - \mathbf{p}\|_2 < r\}
+\end{equation}
+
+With targeted mode:
+\begin{equation}
+    \alpha_{\text{dist-hard}}(\mathbf{x}) = 
+    \begin{cases}
+        -\infty & \text{if } \mathbf{x} \in \mathcal{B} \\
+        \alpha(\mathbf{x}) & \text{otherwise}
+    \end{cases}
+\end{equation}
+
+\subsubsection{Soft Blocking}
+
+Smooth penalty based on distance:
+\begin{equation}
+    p_{\text{soft}}(\mathbf{x}) = \exp\left(-\lambda \frac{d(\mathbf{x}, \mathcal{P})}{r}\right)
+\end{equation}
+
+With targeted mode:
+\begin{equation}
+    \alpha_{\text{dist-soft}}(\mathbf{x}) = 
+    \begin{cases}
+        \frac{\|\mathbf{x} - g_{\min}\|_2}{\|\mathbf{x}^+ - g_{\min}\|_2} \cdot \alpha(\mathbf{x}) & \text{if } \mathbf{x} \in \mathcal{B} \\
+        \alpha(\mathbf{x}) & \text{otherwise}
+    \end{cases}
+\end{equation}
+
+\subsection{Dimension-Wise Blocking}
+
+\subsubsection{Discretization}
+
+Partition each dimension into $B$ blocks:
+\begin{equation}
+    \mathcal{X}_d = \bigcup_{b=1}^B \mathcal{B}_d^{(b)}, \quad d = 1, \ldots, D
+\end{equation}
+
+\subsubsection{Hard Blocking}
+
+Block entire dimension-wise blocks containing pending points:
+\begin{equation}
+    \alpha_{\text{dim-hard}}(\mathbf{x}) = 
+    \begin{cases}
+        -\infty & \text{if } \exists d : b_d(\mathbf{x}) \in \mathcal{O}_d \text{ and } \mathbf{x} \in \mathcal{B} \\
+        \alpha(\mathbf{x}) & \text{otherwise}
+    \end{cases}
+\end{equation}
+where $b_d(\mathbf{x})$ is the block index for $\mathbf{x}$ in dimension $d$, and $\mathcal{O}_d$ are occupied blocks.
+
+\subsubsection{Soft Blocking}
+
+Penalty based on block overlap:
+\begin{equation}
+    o(\mathbf{x}) = \frac{1}{D} \sum_{d=1}^D \mathbb{I}[b_d(\mathbf{x}) \in \mathcal{O}_d]
+\end{equation}
+
+With targeted mode:
+\begin{equation}
+    p_{\text{dim-soft}}(\mathbf{x}) = 
+    \begin{cases}
+        \frac{\|\mathbf{x} - g_{\min}\|_2}{\|\mathbf{x}^+ - g_{\min}\|_2} & \text{if } \mathbf{x} \in \mathcal{B} \\
+        \exp(-\lambda o(\mathbf{x})) & \text{otherwise}
+    \end{cases}
+\end{equation}
+
+\subsection{Local Penalization}
+
+Based on Lipschitz constant estimation:
+\begin{equation}
+    L_{\mathbf{x}}(\mathbf{p}) = \frac{|\mu(\mathbf{x}) - \mu(\mathbf{p})|}{\|\mathbf{x} - \mathbf{p}\|_2 + \epsilon}
+\end{equation}
+
+Penalization:
+\begin{equation}
+    \alpha_{\text{local}}(\mathbf{x}) = \alpha(\mathbf{x}) - \rho \max_{\mathbf{p} \in \mathcal{P}} L_{\mathbf{x}}(\mathbf{p})
+\end{equation}
+
+\subsection{Constant Liar}
+
+Use fantasy values for pending evaluations:
+\begin{equation}
+    \tilde{y}_p = 
+    \begin{cases}
+        \min \mathbf{y} & \text{(optimistic)} \\
+        \text{mean}(\mathbf{y}) & \text{(neutral)} \\
+        \max \mathbf{y} & \text{(pessimistic)} \\
+        \mu(\mathbf{p}) & \text{(kriging)}
+    \end{cases}
+\end{equation}
+
+Update GP with augmented dataset: $\mathcal{D}' = \mathcal{D} \cup \{(\mathbf{p}, \tilde{y}_p) : \mathbf{p} \in \mathcal{P}\}$
+
+\section{Batch Acquisition Algorithm}
+
+\begin{algorithm}[H]
+\caption{Sequential Greedy Batch Acquisition with Targeted Blocking}
+\begin{algorithmic}[1]
+\State \textbf{Input:} Model (GP/TP), acquisition function $\alpha$, batch size $q$, blocking strategy
+\State \textbf{Output:} Batch $\mathcal{B} = \{\mathbf{x}_1, \ldots, \mathbf{x}_q\}$
+\State Initialize: $\mathcal{B} = \emptyset$, $\mathcal{D}' = \mathcal{D}$
+\For{$i = 1$ to $q$}
+    \If{$i = 1$}
+        \State $\mathbf{x}^+ \gets$ current best point from $\mathcal{D}$
+    \Else
+        \State $\mathbf{x}^+ \gets \mathbf{x}_1$ (first batch point)
+    \EndIf
+    \State Find closest evaluated point: $g_{\min} = \arg\min_{\mathbf{x}_j \in \mathcal{D}'} \|\mathbf{x}_j - \mathbf{x}^+\|_2$
+    \State Compute blocking region $\mathcal{B}$ between $\mathbf{x}^+$ and $g_{\min}$
+    \State Apply penalties: $\alpha'(\mathbf{x}) = p(\mathbf{x}) \cdot \alpha(\mathbf{x})$
+    \State Select: $\mathbf{x}_i = \arg\max_{\mathbf{x} \in \mathcal{X}} \alpha'(\mathbf{x})$
+    \State Update: $\mathcal{B} = \mathcal{B} \cup \{\mathbf{x}_i\}$, $\mathcal{D}' = \mathcal{D}' \cup \{(\mathbf{x}_i, \tilde{y}_i)\}$
+\EndFor
+\State \textbf{Return:} $\mathcal{B}$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Computational Complexity}
+
+\subsection{GP Operations}
+
+\begin{itemize}
+    \item \textbf{Training}: $\mathcal{O}(n^3)$ for Cholesky decomposition
+    \item \textbf{Prediction}: $\mathcal{O}(n^2)$ per point
+    \item \textbf{Hyperparameter optimization}: Multiple $\mathcal{O}(n^3)$ operations
+\end{itemize}
+
+\subsection{Acquisition Optimization}
+
+\begin{itemize}
+    \item \textbf{Multi-start optimization}: $m$ starts $\times$ optimization cost
+    \item \textbf{Typical}: $m = 10d$ multi-starts
+\end{itemize}
+
+\subsection{Targeted Blocking}
+
+\begin{itemize}
+    \item \textbf{Finding closest point}: $\mathcal{O}(n)$
+    \item \textbf{Distance computations}: $\mathcal{O}(nd)$ per candidate
+    \item \textbf{Total per batch point}: $\mathcal{O}(n(d + c))$ where $c$ is number of candidates
+\end{itemize}
+
+\section{Convergence Properties}
+
+\subsection{Regret Bounds}
+
+For Gaussian BO with GP-UCB:
+\begin{equation}
+    R_T = \mathcal{O}^*(\sqrt{T \gamma_T})
+\end{equation}
+where $\gamma_T$ is the maximum information gain.
+
+For Matérn kernels with $\nu > 1$:
+\begin{equation}
+    \gamma_T = \mathcal{O}((\log T)^{d+1})
+\end{equation}
+
+\subsection{AHBO Convergence}
+
+With data-driven $\nu$ adaptation, AHBO exhibits:
+\begin{itemize}
+    \item \textbf{Early phase}: Heavy-tailed exploration similar to Student-t BO
+    \item \textbf{Late phase}: Convergence guarantees similar to Gaussian BO
+    \item \textbf{Transition}: Smooth adaptation balances exploration-exploitation
+\end{itemize}
+
+\section{Implementation Notes}
+
+\subsection{Numerical Stability}
+
+\begin{itemize}
+    \item Add nugget term $\delta \mathbf{I}$ to kernel matrix ($\delta = 10^{-8}$)
+    \item Use Cholesky decomposition for matrix inversion
+    \item Log-space computation for probability densities
+    \item Normalize inputs to $[0, 1]^d$
+\end{itemize}
+
+\subsection{Hyperparameter Optimization}
+
+Use maximum likelihood estimation:
+\begin{equation}
+    \boldsymbol{\theta}^* = \arg\max_{\boldsymbol{\theta}} \log p(\mathbf{y} | \mathbf{X}, \boldsymbol{\theta})
+\end{equation}
+
+Log marginal likelihood:
+\begin{equation}
+    \log p(\mathbf{y} | \mathbf{X}, \boldsymbol{\theta}) = -\frac{1}{2}\mathbf{y}^T\mathbf{K}^{-1}\mathbf{y} - \frac{1}{2}\log|\mathbf{K}| - \frac{n}{2}\log(2\pi)
+\end{equation}
+
+\section{References}
+
+\begin{enumerate}
+    \item Rasmussen, C. E., \& Williams, C. K. I. (2006). \textit{Gaussian Processes for Machine Learning}. MIT Press.
+    \item Snoek, J., Larochelle, H., \& Adams, R. P. (2012). Practical Bayesian optimization of machine learning algorithms. \textit{NeurIPS}.
+    \item Shah, A., Wilson, A. G., \& Ghahramani, Z. (2014). Student-t processes as alternatives to Gaussian processes. \textit{AISTATS}.
+    \item González, J., Dai, Z., Hennig, P., \& Lawrence, N. (2016). Batch Bayesian optimization via local penalization. \textit{AISTATS}.
+    \item Srinivas, N., Krause, A., Kakade, S. M., \& Seeger, M. (2010). Gaussian process optimization in the bandit setting: No regret and experimental design. \textit{ICML}.
+    \item Ginsbourger, D., Le Riche, R., \& Carraro, L. (2010). Kriging is well-suited to parallelize optimization. \textit{Computational Intelligence in Expensive Optimization Problems}.
+\end{enumerate}
+
+\section{Conclusion}
+
+BayesOptR provides a comprehensive suite of Bayesian Optimization algorithms with theoretically sound foundations. The data-driven adaptive $\nu$ schedule in AHBO provides automatic exploration-exploitation balance, while targeted blocking strategies enable efficient batch acquisition with minimal redundancy.
+
+\end{document}
