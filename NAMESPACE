@@ -51,6 +51,3 @@ importFrom(mvtnorm, dmvnorm, rmvnorm)
 importFrom(Matrix, nearPD)
 importFrom(matrixStats, rowMaxs, colMins, colMaxs)
 importFrom(R6, R6Class)
-
-useDynLib(BayesOptR, .registration = TRUE)
-importFrom(Rcpp, sourceCpp)
